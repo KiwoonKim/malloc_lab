@@ -84,17 +84,18 @@ static void remove_block(char *bp);
 #endif
 int mm_init(void)
 {
-	if ((heap_listq = mem_sbrk(12*WSIZE)) == NULL) return -1;
+	if ((heap_listq = mem_sbrk(6*WSIZE)) == NULL) return -1;
 	PUT(heap_listq , 0);
-	for (int i = 1; i < 11; i++){
-		PUT(heap_listq + (i*WSIZE), NULL);
-	}
-	PUT(heap_listq + (11*WSIZE), PACK(0, 1));
+	PUT(heap_listq + (1*WSIZE), PACK(ALIGNMENT*2, 1));
+	PUT(heap_listq + (2*WSIZE), NULL);
+	PUT(heap_listq + (3*WSIZE), NULL);
+	PUT(heap_listq + (4*WSIZE), PACK(ALIGNMENT*2, 1));
+	PUT(heap_listq + (5*WSIZE), PACK(0, 1));
 	heap_listq += 2*WSIZE;
 	root = heap_listq;
 	/* heap_listq = { 0, 9, 9, 1 } 
 	   heap_listq = &haep_listq[2] */
-	if (extend_heap(CHUNKSIZE) == NULL) return -1;
+	if (extend_heap(16) == NULL) return -1;
 	return 0;
 }
 
