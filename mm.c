@@ -41,9 +41,9 @@ typedef struct list_t{
 /* single word (4) or double word (8) alignment */
 #define WSIZE		4
 #define ALIGNMENT	8
-#define CHUNKSIZE	(1<<12)
+#define CHUNKSIZE	(1<<16)
 #define MIN_POWERED 3
-#define MAX_POWERED 12
+#define MAX_POWERED 16
 
 # define MAX(x , y) ((x) > (y)? (x) : (y))
 
@@ -52,7 +52,7 @@ typedef struct list_t{
 // read & write a word at addr p
 #define GET(p)		(*(list_t*)(p))
 #define GET_SIZE(p) (*(size_t*)(p))
-#define PUT(p, val)	(*(list_t*)(p) = (val))
+#define PUT(p, val)	(*(unsigned int*)(p) = (val))
 #define PUT_SIZE(p, val) (*(size_t*)(p) = (val))
 // read size and alloc fields from addr p
 #define POW_SIZE(pow)		(1 << (pow+MIN_POWERED))
@@ -67,21 +67,21 @@ static char	*heap_listq = NULL;
 static char *heap_start = NULL;
 // for explicit list
 int		mm_init(void);
-void	put_block(list_t* h_list, list_t* pos, size_t size);
+void	put_block(list_t* h_list, list_t* pos, int pow);
 
 static void	*extend_heap(size_t size);
-static void place(void *bp, size_t f_pow, size_t a_pow);
+static void place(char *bp, size_t f_pow, size_t a_pow);
 static void *find_fit(size_t size);
 
 int mm_init(void)
 {
-	if ((heap_listq = mem_sbrk(12*WSIZE)) == NULL) return -1;
+	if ((heap_listq = mem_sbrk(MAX_POWERED*WSIZE)) == NULL) return -1;
 	PUT_SIZE(heap_listq, 0);
-	for (int i = 1; i < 11; i++){
+	for (int i = 1; i < MAX_POWERED - MIN_POWERED + 1; i++){
 		PUT(heap_listq + (i*WSIZE), NULL);
 	}
-	PUT_SIZE(heap_listq, 1);
-	heap_start = heap_listq + (12*WSIZE);
+	PUT_SIZE(heap_listq + (MAX_POWERED - MIN_POWERED + 1) * WSIZE, 1);
+	heap_start = heap_listq + (MAX_POWERED*WSIZE);
 	/* heap_listq = { 0, 9, 9, 1 } 
 	   heap_listq = &haep_listq[2] */
 	if (extend_heap(CHUNKSIZE) == NULL) return -1;
@@ -112,9 +112,9 @@ void *mm_malloc(size_t size)
 	return NULL;
 }
 
-static void place(void *bp, size_t f_pow, size_t a_pow) {
+static void place(char *bp, size_t f_pow, size_t a_pow) {
     
-	void **cur = *bp;
+	char *cur = *bp;
 	remove_block(bp);
 	while (f_pow > a_pow) {
 		f_pow -= 1;
@@ -125,7 +125,7 @@ static void place(void *bp, size_t f_pow, size_t a_pow) {
 }
 
 static void *find_fit(size_t size){
-	void	*bp;
+	char	*bp;
 	size_t	asize;
 	int k = 0;
 	while (k < MAX_POWERED) {
@@ -150,7 +150,7 @@ static void *find_fit(size_t size){
 }
 
 static void put_block(list_t* h_list, list_t* pos, int f_pow){
-	pos->next = *h_list;
+	pos->next = h_list;
 	pos->prev = NULL;
 	if (h_list){
 		h_list->prev = pos;
@@ -233,8 +233,8 @@ void mm_free(void *bp)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
-{
+// void *mm_realloc(void *ptr, size_t size)
+// {
 //	void *oldptr = ptr;
 //	void *newptr;
 //	size_t copySize;
@@ -249,4 +249,4 @@ void *mm_realloc(void *ptr, size_t size)
 //	memcpy(newptr, oldptr, copySize);
 //	mm_free(oldptr);
 //	return newptr;
-}
+// }
