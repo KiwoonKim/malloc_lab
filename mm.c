@@ -67,11 +67,11 @@ static char	*heap_listq = NULL;
 static char *heap_start = NULL;
 // for explicit list
 int		mm_init(void);
-void	put_block(list_t* h_list, list_t* pos, int pow);
-
+static void	put_block(list_t* h_list, list_t* pos, int pow);
 static void	*extend_heap(size_t size);
 static void place(char *bp, size_t f_pow, size_t a_pow);
 static void *find_fit(size_t size);
+static void	remove_block(list_t* bp);
 
 int mm_init(void)
 {
@@ -107,23 +107,16 @@ static void *extend_heap(size_t size)
  */
 void *mm_malloc(size_t size)
 {
-	find_fit(size);
-
-	return NULL;
+	char *bp;
+	bp = find_fit(size);
+	
+	return bp;
 }
-
-static void place(char *bp, size_t f_pow, size_t a_pow) {
-    
-	char *cur = *bp;
-	remove_block(bp);
-	while (f_pow > a_pow) {
-		f_pow -= 1;
-		bp = bp - WSIZE;
-		put_block(bp, cur+POW_SIZE(f_pow), f_pow); // return bp의 값을 
-	}
-	PUT_SIZE(HDRP(cur), POW_SIZE(f_pow));
-}
-
+// 할당 할 수있는 가용블럭중 제일 작은 블럭을 찾고, 그 과정에서 남은 블럭을 가용리스트에 넣고, 찾은 제일 작은 블럭을 할당함.
+//static void *place(char *bp, size_t f_pow, size_t a_pow) {
+//    
+//	}
+// 
 static void *find_fit(size_t size){
 	char	*bp;
 	size_t	asize;
@@ -133,6 +126,7 @@ static void *find_fit(size_t size){
 		k++;
 	}
 	asize = 1<<(k+MIN_POWERED);
+	
 	int i = k;
 	while (*bp == NULL || *bp != 1) {
 		bp = heap_listq + (i + 1) * WSIZE;
@@ -144,9 +138,17 @@ static void *find_fit(size_t size){
 		i -= 1;
 		bp -= WSIZE;
 	}
-	place(bp, i, k);
-
-	return NULL;
+	
+	char *cur = *bp;
+	remove_block((list_t*)bp);
+	while (i > k) {
+		i -= 1;
+		bp = bp - WSIZE;
+		put_block(bp, cur+POW_SIZE(i), i); // return bp의 값을 
+	}
+	PUT_SIZE(HDRP(cur), POW_SIZE(i));
+	return cur;
+	//place(bp, i, k);
 }
 
 static void put_block(list_t* h_list, list_t* pos, int f_pow){
@@ -226,13 +228,17 @@ void mm_free(void *bp)
 	while (size > 1){
 		f_pow += 1;
 		size >>= 1;
-	
+	}	
 	buddybuddy(bp, f_pow);
 }
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
+void *mm_realloc(void *ptr, size_t size)
+{
+	return ptr;
+}
 // void *mm_realloc(void *ptr, size_t size)
 // {
 //	void *oldptr = ptr;
