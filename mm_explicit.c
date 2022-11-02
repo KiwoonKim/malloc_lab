@@ -291,6 +291,10 @@ void *mm_realloc(void *ptr, size_t size)
 	size_t copySize;
 	//if ((int)size < 0) return NULL;
 	if((int)size == 0) {mm_free(ptr); return NULL;}
+	size = size + 2*WSIZE;
+	if (GET_SIZE(HDRP(ptr)) > size)
+		return ptr;
+	//if (GET_ALLOC(HDRP(NEXT_BLKP(bp))) && 
 	newptr = mm_malloc(size);
 	if (newptr == NULL)
 		return NULL;
