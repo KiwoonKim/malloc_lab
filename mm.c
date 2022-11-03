@@ -35,15 +35,14 @@ team_t team = {
 	""
 };
 
-typedef struct list_t{
-	struct list_t *prev, *next;
-} list_t;
+typedef unsigned int list_t;
 /* single word (4) or double word (8) alignment */
 #define WSIZE		4
 #define ALIGNMENT	8
 #define CHUNKSIZE	(1<<16)
 #define MIN_POWERED 3
 #define MAX_POWERED 16
+#define LIST_LENGTH MAX_POWERED - MIN_POWERED + 1
 
 # define MAX(x , y) ((x) > (y)? (x) : (y))
 
@@ -56,9 +55,10 @@ typedef struct list_t{
 #define PUT_SIZE(p, val) (*(size_t*)(p) = (val))
 // read size and alloc fields from addr p
 #define POW_SIZE(pow)		(1 << (pow+MIN_POWERED))
-#define HDRP(p)				((void *)(p)-WSIZE)
+#define HDRP(p)				((void *)(p))
 // for decplicit lsist
 // given block ptr bp, compute addr of next and previous blocks
+
 
 /* 
  * mm_init - initialize the malloc package.
@@ -67,21 +67,23 @@ static char	*heap_listq = NULL;
 static char *heap_start = NULL;
 // for explicit list
 int		mm_init(void);
-static void	put_block(list_t* h_list, list_t* pos, int pow);
+static void	put_block(list_t** root, list_t** pos);
 static void	*extend_heap(size_t size);
 static void place(char *bp, size_t f_pow, size_t a_pow);
 static void *find_fit(size_t size);
-static void	remove_block(list_t* bp);
+static void	remove_block(list_t** root, list_t **target);
 
 int mm_init(void)
 {
 	if ((heap_listq = mem_sbrk(MAX_POWERED*WSIZE)) == NULL) return -1;
 	PUT_SIZE(heap_listq, 0);
-	for (int i = 1; i < MAX_POWERED - MIN_POWERED + 1; i++){
+	for (int i = 1; i < LIST_LENGTH + 1; i++){
 		PUT(heap_listq + (i*WSIZE), NULL);
 	}
-	PUT_SIZE(heap_listq + (MAX_POWERED - MIN_POWERED + 1) * WSIZE, 1);
-	heap_start = heap_listq + (MAX_POWERED*WSIZE);
+	PUT_SIZE(heap_listq + (LIST_LENGTH + 1) * WSIZE, 1);
+	heap_listq += WSIZE;
+	heap_start = heap_listq + ((LIST_LENGTH + 1) * WSIZE);
+//	printf("heap_listq start : %p, end : %p\n", heap_listq, heap_start );
 	/* heap_listq = { 0, 9, 9, 1 } 
 	   heap_listq = &haep_listq[2] */
 	if (extend_heap(CHUNKSIZE) == NULL) return -1;
@@ -90,13 +92,13 @@ int mm_init(void)
 
 static void *extend_heap(size_t size)
 {
+	printf("----------------extend heap---------------\n");
 	list_t *bp;
+	list_t **max_free_list;
 	if ((long) (bp = mem_sbrk(size)) == -1) return NULL;
-	list_t start_buddy;
-	*bp = start_buddy;
-	bp->prev = (list_t *) (heap_listq + MAX_POWERED - MIN_POWERED);
-	bp->next = NULL;
-	heap_listq[9] = bp;
+	max_free_list = heap_listq + (MAX_POWERED - MIN_POWERED) * WSIZE;
+	printf("max_free_list : %p, bp : %p \n", max_free_list, bp);
+	put_block(max_free_list, bp);
 	return bp;
 }
 
@@ -107,10 +109,14 @@ static void *extend_heap(size_t size)
  */
 void *mm_malloc(size_t size)
 {
+	printf("------------start malloc-------------\n");
+	printf("size %d\n", size);
+
 	char *bp;
 	bp = find_fit(size);
-	
-	return bp;
+//	printf("###########end malloc###############\n");	
+//	printf("in extend_heap tmp : %p\n", bp);
+	return bp + ALIGNMENT;
 }
 // 할당 할 수있는 가용블럭중 제일 작은 블럭을 찾고, 그 과정에서 남은 블럭을 가용리스트에 넣고, 찾은 제일 작은 블럭을 할당함.
 //static void *place(char *bp, size_t f_pow, size_t a_pow) {
@@ -118,118 +124,141 @@ void *mm_malloc(size_t size)
 //	}
 // 
 static void *find_fit(size_t size){
-	char	*bp;
-	size_t	asize;
+	//	printf("------------find fit-------------\n");
+	char	*root;
 	int k = 0;
 	while (k < MAX_POWERED) {
 		if (1 << (k + MIN_POWERED) >= size) break;
 		k++;
 	}
-	asize = 1<<(k+MIN_POWERED);
-	
+//	printf("in find_fit k: %d\n",k );
 	int i = k;
-	while (*bp == NULL || *bp != 1) {
-		bp = heap_listq + (i + 1) * WSIZE;
+	root = heap_listq + (k)* WSIZE;
+	//	printf("in find fit  k: %d\n", k);
+	while (*(unsigned int*)(root)== NULL && *root != 1) {
+		root +=  WSIZE;
 		i++;
+//		printf("in find_root: %p and root %p\n", *(unsigned int*)root, root);
+//		printf("in find_i : %d\n", i);
 	}
-	if (*bp == 1)
+//	printf("in find fit i ; %d\n", i);
+	//	printf("in find fit bp: %p\n", bp);
+	if (*root == 1)
 	{
+		printf("check extend");
 		extend_heap(CHUNKSIZE);
 		i -= 1;
-		bp -= WSIZE;
-	}
-	
-	char *cur = *bp;
-	remove_block((list_t*)bp);
+		root -= WSIZE;
+	}	
+	//	printf("in find_fit bp : %p\n", bp);
+	char *cur = *(unsigned int*) root;
+	printf("in find fit root : %p value of root : %p, cur : %p  isize : %d ksize : %d\n", root, *(unsigned int*)root, cur, POW_SIZE(i), POW_SIZE(k));
+	remove_block((list_t*)root, (list_t*)cur);
 	while (i > k) {
 		i -= 1;
-		bp = bp - WSIZE;
-		put_block(bp, cur+POW_SIZE(i), i); // return bp의 값을 
+		root = root - WSIZE;
+		put_block(root, cur+POW_SIZE(i)); // return bp의 값을 
 	}
 	PUT_SIZE(HDRP(cur), POW_SIZE(i));
+//	printf("in find fit pow_size %d\n", POW_SIZE(i));
+//	printf("in find fit HEADER : %p\n", cur);
+//	printf("in find fit HDGET_SIZE %d\ni", GET_SIZE(HDRP(cur)));
 	return cur;
 	//place(bp, i, k);
 }
 
-static void put_block(list_t* h_list, list_t* pos, int f_pow){
-	pos->next = h_list;
-	pos->prev = NULL;
-	if (h_list){
-		h_list->prev = pos;
+static void put_block(list_t** root, list_t** new){
+	
+	printf("-------put block-------\n");
+	printf("in root : %p\n", root);
+	printf("root value: %p\n", *root);
+	printf("in new  : %p\n", new);
+	printf("-----------------------\n");
+	if ((*root!=NULL))
+	{	
+		*new = *root;
+		*((*root) + 1) = new;
+		*root = new;
+		//*(*(root)+1) = new; // 원래 맨 앞 원소의 prev에 new node 주소를 넣는다,
+		//*(new+1) = root; // new node의prev에 root 주소를 넣는다
+		//*new = *root; // new node의 next에 원래 맨 앞 원소의 주소를 넣는다
+		//*root = new; // root에 new 노드 주소를 넣는다 
 	}
-	h_list = pos;
+	else{
+		printf("no next!\n");
+		*root = new;
+		*new = NULL;
+	}
+
+	printf("root next : %p\n",*root);
+	printf("new add : %p\n", new);
+	printf("new next: %p\n", *new);
+	printf("root next next : %p\n",**root); 
+	//if (h_list){
+	//	h_list->prev = pos;
+	//}
+	//h_list = pos;
 	//buddybuddy(pos, f_pow);
 }
-static void remove_block(list_t* h_list){
-	h_list = h_list->next;
-	h_list->prev = NULL;
+static void remove_block(list_t** root, list_t** target){
+	printf("--------------remove_block----------\n");
+	printf("free list root: %p\n", root);
+	printf("root value %p, target %p\n",*root,target);	
+	printf("root valup %p, *target %p\n",*root,*(unsigned int*)target);	
+	printf("------------------------------------\n");
+	// target의 prev를 target의 next와 연결
+	
+	if (*target != NULL)	{
+		*(*(target+1)) = *target;
+		*(*(target)+1) = *(target +1); // target의 next를 target의 prev와 연결
+	}
+	else if (*(target + 1) == root)
+	{
+		*root = (*target);
+	}
+	else *(root)= NULL;
+	printf("root value %p\n", *root);
 }
 
 static void buddybuddy(char* pos, int f_pow){
+		printf("------buddy~buddy~----------\n");
+	//	printf("power : %d\n", GET_SIZE(HDRP(pos))); 
 	size_t pos_rel = (size_t)(pos - heap_start);
-	size_t buddy_rel = (pos_rel ^ pos_rel << f_pow);
-	while (POW_SIZE(f_pow) == GET_SIZE(HDRP(buddy_rel + heap_start)))
+	//	printf("relative position : %p\n", pos_rel);
+	size_t buddy_rel = (pos_rel ^ (1 << f_pow));
+	//	printf("absolute buddy pos: %p\n", buddy_rel + heap_start);
+	//	printf("buddy ret : %p\n" ,buddy_rel);
+	//	printf("out buddy  while POW : %d,  HD : %d\n", 1 << f_pow ,GET_SIZE(HDRP(buddy_rel + heap_start)));
+	while (!GET_SIZE(HDRP(buddy_rel + heap_start)) && f_pow < MAX_POWERED)
 	{
-		remove_block((list_t *)(buddy_rel + heap_start));
+		printf(" in buddy while POW : %d,  HD : %d\n", 1 << f_pow  ,GET_SIZE(HDRP(buddy_rel + heap_start)));
+		printf(" in buddy while buddy_rel : %p, 루트주소 : %p, 루트 다음 : %p\n", buddy_rel, (list_t *)(heap_listq + (f_pow - MIN_POWERED) * WSIZE), *(list_t *)(heap_listq + (f_pow-MIN_POWERED)*WSIZE)); 	
+		remove_block((list_t **)(heap_listq + (f_pow - MIN_POWERED)*WSIZE), (list_t *)(heap_start + buddy_rel));
 		f_pow++;
 		if ((long)buddy_rel < (long)pos_rel)
 			pos_rel = buddy_rel;
-		buddy_rel = (pos_rel ^ pos_rel << f_pow);
+		buddy_rel = (pos_rel ^ (1 << f_pow));
 	}
-	put_block((list_t*)(heap_listq + ((f_pow - 2) * WSIZE)), (list_t*)(buddy_rel + heap_start), POW_SIZE(f_pow));
+	//	printf("while after f_pow : %d\n", f_pow);
+	printf("while after root : %p\n", (list_t*)(heap_listq + ((f_pow-MIN_POWERED) * WSIZE)));
+	printf("while after cur_list : %p\n", (list_t*)(buddy_rel + heap_start));
+	put_block((list_t*)(heap_listq + ((f_pow - MIN_POWERED) * WSIZE)), (list_t*)(pos_rel + heap_start));
 }
 
-// insert block to free_list.
-//static void *find_fit(size_t asize){
-//  void *bp;
-//  static int last_malloced_size = 0;
-//  static int repeat_counter = 0;
-//  if( last_malloced_size == (int)asize){
-//      if(repeat_counter>30){
-//        int extendsize = MAX(asize, 4 * WSIZE);
-//        bp = extend_heap(extendsize/4);
-//        return bp;
-//      }
-//      else
-//        repeat_counter++;
-//  }
-//  else
-//    repeat_counter = 0;
-//  for (bp = root; GET_ALLOC(HDRP(bp)) == 0; bp = NEXTP(bp) ){
-//    if (asize <= (size_t)POW_SIZE(HDRP(bp)) ) {
-//      last_malloced_size = asize;
-//      return bp;
-//    }
-//  }
-//  return NULL;
-//}
-///best_fit.
-//static void *find_fit(size_t size){
-//	void	*bp;
-//	void	*last = NULL;
-//	size_t	min = 1e9;
-//	size_t	gap;
-//	for (bp = root; GET_ALLOC(HDRP(bp)) == 0; bp = NEXTP(bp)){
-//		gap = POW_SIZE(HDRP(bp)) - size;
-//		if (gap == 0) {
-//			return bp;
-//		}
-//		else if (0 < gap && gap < min) {
-//			min = gap; 
-//			last = bp;
-//		} 
-//	}
-//	return last;
-//}
 void mm_free(void *bp)
 {
-	size_t size = GET_SIZE(HDRP(bp));
+	printf("------------------free------------------\n");
+	size_t size = GET_SIZE(HDRP(bp - ALIGNMENT));
+	printf("mm free bp: %d\n", GET_SIZE(HDRP(bp - ALIGNMENT)));
+	//	printf("mm free HEAD bp: %p\n", bp - ALIGNMENT);
+//	printf("size in free : %d\n", size);
 	int f_pow = 0;
 	while (size > 1){
 		f_pow += 1;
 		size >>= 1;
-	}	
-	buddybuddy(bp, f_pow);
+	}
+	//	printf("f_pow in free f_pow : %d POWERED f_pow : %d\n", f_pow, 1 << f_pow);
+	buddybuddy(bp - ALIGNMENT, f_pow);
 }
 
 /*
